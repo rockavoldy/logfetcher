@@ -79,6 +79,8 @@ type App struct {
 	ctx   context.Context
 }
 
+type SkipDownload struct{}
+
 func main() {
 	ctx := context.Background()
 	b, err := os.ReadFile("credentials.json")
@@ -98,13 +100,17 @@ func main() {
 	}
 	client := getClient(config)
 	srv, err := drive.NewService(ctx, option.WithHTTPClient(client))
-	app := App{
-		Drive: srv,
-		ctx:   ctx,
-	}
 	if err != nil {
 		log.Fatalf("Unable to retrieve Drive client: %v", err)
 	}
+
+	app := App{
+		Drive: srv,
+		ctx:   context.WithValue(ctx, SkipDownload{}, true),
+	}
+	app.listDir(folderID)
+	app.ctx = context.WithValue(ctx, SkipDownload{}, false)
+	// reset the context
 
 	s := gocron.NewScheduler(time.UTC)
 	// run it at 03:00 UTC+7 everyday, as the log is uploded at 01:30 UTC+7
@@ -133,6 +139,11 @@ func (app App) listDir(FolderID string) error {
 		fmt.Println("No files found.")
 	} else {
 		for _, i := range r.Files {
+			if skip := app.ctx.Value(SkipDownload{}).(bool); skip {
+				log.Printf("Skip downloading %s", i.Name)
+				continue
+			}
+			// download the file when context skipDownload is not set
 			app.downloadDir(i.Id)
 		}
 	}
