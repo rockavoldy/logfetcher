@@ -113,13 +113,79 @@ func main() {
 	// reset the context
 
 	s := gocron.NewScheduler(time.UTC)
+
+	// only retain for 30 days log
+	// app.DeleteOldLog(Interval30Days)
+
 	// run it at 03:00 UTC+7 everyday, as the log is uploded at 01:30 UTC+7
 	s.Every(1).Day().At("20:00:00").Do(func() {
-		app.listDir(folderID)
 		log.Println("Fetch new log")
+		app.listDir(folderID)
+		log.Println("Check for old log")
+		// only retain for 30 days log
+		app.DeleteOldLog(Interval30Days)
 	})
 
 	s.StartImmediately().StartBlocking()
+}
+
+type IntervalDays int
+
+const (
+	Interval3Days IntervalDays = iota
+	Interval7Days
+	Interval14Days
+	Interval30Days
+)
+
+func (app App) DeleteOldLog(interval IntervalDays) error {
+	file, err := os.Open("./")
+	if err != nil {
+		log.Println(err)
+	}
+	defer file.Close()
+
+	names, err := file.Readdirnames(0)
+	if err != nil {
+		log.Println(err)
+	}
+
+	for _, name := range names {
+		if name == "logfetcher" || name == "credentials.json" || name == "token.json" {
+			// with assumption that this current working directory only contain required files
+			continue
+		}
+
+		timeName, err := time.Parse("2006-01-02", name[:10])
+		if err != nil {
+			// parse error, could be because the file/folder name is not in date format
+			continue
+		}
+
+		// by default should be -30 days
+		var daysInterval int
+		switch interval {
+		case Interval3Days:
+			daysInterval = -3
+		case Interval7Days:
+			daysInterval = -7
+		case Interval14Days:
+			daysInterval = -14
+		default:
+			daysInterval = -30
+		}
+
+		// check if nameTime < timeNow - 30 days
+		// if yes, delete
+		if timeName.Before(time.Now().AddDate(0, 0, daysInterval)) {
+			err = os.RemoveAll(name)
+			if err != nil {
+				log.Println(err)
+			}
+		}
+	}
+
+	return nil
 }
 
 func (app App) listDir(FolderID string) error {
